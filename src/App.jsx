@@ -18,7 +18,6 @@ export default function App() {
   const gameAreaRef = useRef(null);
 
   const startGame = () => {
-
     if (phaseRef.current === "gameover") return;
 
     if (phaseRef.current === "idle") {
@@ -63,11 +62,11 @@ export default function App() {
     }
   };
 
-  const handleRestart = () => {
+  const handleRestart = async () => {
     if (finalAverage === null) return;
 
-    // Send the final average to the backend
-    sendAverage(finalAverage);
+    // Wait for backend confirmation before resetting
+    await sendAverage(finalAverage);
 
     // Reset all game states
     setShowRestartButton(false);
@@ -78,23 +77,25 @@ export default function App() {
     phaseRef.current = "idle";
   };
 
-
   const sendAverage = async (avg) => {
     if (!loggedIn || !username) return;
     try {
+      const avgNum = parseFloat(avg);
+      const formattedAvg = avgNum.toFixed(2); // send as string with 2 decimals (NUMERIC(10,2) in DB)
+
       const res = await fetch("http://localhost:3002/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, reactionTime: avg }),
+        body: JSON.stringify({ username, reactionTime: formattedAvg }),
       });
-      if (!res.ok) throw new Error('Server responded with an error');
-      
+      if (!res.ok) throw new Error("Server responded with an error");
+
       const data = await res.json();
       console.log("Server:", data);
 
-      // Update UI with new best time if it's better
-      if (bestTime === null || avg < bestTime) {
-        setBestTime(avg.toFixed(2));
+      // Compare as numbers, store as string
+      if(bestTime === null || avgNum < parseFloat(bestTime)) {
+        setBestTime(avgNum.toFixed(2));
       }
     } catch (err) {
       console.error("Failed to send data:", err);
@@ -102,21 +103,31 @@ export default function App() {
   };
 
   const handleLogin = async () => {
-    if (!username) return alert("Enter username first");
+    if(!username) return alert("Enter username first");
     try {
       const res = await fetch("http://localhost:3002/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
       });
-      if (res.status === 404) {
+      if(res.status === 404) {
         return alert("User not found. Please register first.");
       }
-      if (!res.ok) throw new Error("Login failed");
+      if(!res.ok) throw new Error("Login failed");
       const data = await res.json();
       setLoggedIn(true);
-      alert(`Logged in! Your best time: ${data.reactionTime} ms`);
-      setBestTime(data.reactionTime);
+
+      const normalizedTime =
+        data.reactionTime !== null
+          ? parseFloat(data.reactionTime).toFixed(2)
+          : null;
+
+      alert(
+        `Logged in! Your best time: ${
+          normalizedTime !== null ? normalizedTime + " ms" : "N/A"
+        }`
+      );
+      setBestTime(normalizedTime);
     } catch (err) {
       console.error(err);
     }
@@ -163,7 +174,7 @@ export default function App() {
       document.removeEventListener("touchstart", handleTouchOrClick);
       clearTimeout(timerRef.current);
     };
-  }, [times]); // Re-added `times` to ensure the logic inside the effect has the latest version
+  }, [times]);
 
   return (
     <div
@@ -189,8 +200,12 @@ export default function App() {
           onChange={(e) => setUsername(e.target.value)}
           style={{ padding: "0.5rem", fontSize: "1rem", marginRight: "0.5rem" }}
         />
-        <button onClick={handleLogin} disabled={loggedIn}>Login</button>
-        <button onClick={handleRegister} disabled={loggedIn}>Register</button>
+        <button onClick={handleLogin} disabled={loggedIn}>
+          Login
+        </button>
+        <button onClick={handleRegister} disabled={loggedIn}>
+          Register
+        </button>
         {loggedIn && (
           <p style={{ marginTop: "0.5rem" }}>
             Best Time: {bestTime !== null ? `${bestTime} ms` : "N/A"}
@@ -213,16 +228,16 @@ export default function App() {
       >
         <p>{message}</p>
         {reactionTime !== null && <p>Reaction Time: {reactionTime} ms</p>}
-        
+
         {/* restart button */}
         {showRestartButton && (
-          <button 
+          <button
             onClick={handleRestart}
-            style={{ 
-              fontSize: '1.5rem', 
-              padding: '10px 20px', 
-              marginTop: '20px',
-              cursor: 'pointer' 
+            style={{
+              fontSize: "1.5rem",
+              padding: "10px 20px",
+              marginTop: "20px",
+              cursor: "pointer",
             }}
           >
             Restart & Save Score
